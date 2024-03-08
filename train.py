@@ -67,6 +67,20 @@ for b in range(batch_size):
         print(f"when input is {context.tolist()} the target: {target}")
 """
 
+@torch.no_grad()
+def estimate_loss():
+    out = {}
+    m.eval()
+    for split in ['train', 'val']:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            X, Y = get_batch(split)
+            logits, loss = m(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    m.train()
+    return out
+
 class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size):
         super().__init__()
@@ -113,6 +127,12 @@ print(loss)
 optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate)
 
 for steps in range(max_iters):
+
+    # every once in a while evaluate the loss on train and val sets
+    if steps % eval_interval == 0:
+        losses = estimate_loss()
+        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
     # sample a batch of data
     xb, yb = get_batch('train')
 
