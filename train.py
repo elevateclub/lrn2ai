@@ -1,3 +1,5 @@
+import datetime
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -8,10 +10,12 @@ block_size = 8 # what is the maximum context length for predictions?
 max_iters = 3000
 eval_interval = 300
 learning_rate = 1e-2
-device = 'mps' 
+device = 'cpu' 
 eval_iters = 200
 
 torch.manual_seed(1337)
+
+start = datetime.datetime.now()
 
 # wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 with open('input.txt', 'r', encoding='utf-8') as f:
@@ -48,7 +52,7 @@ def get_batch(split):
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([data[i:i+block_size] for i in ix])
     y = torch.stack([data[i+1:i+block_size+1] for i in ix])
-    return x, y 
+    return x.to(device), y.to(device)
 
 """ example to explain how inputs and targets
 xb, yb = get_batch("train")
@@ -98,7 +102,7 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
-m = BigramLanguageModel(vocab_size)
+m = BigramLanguageModel(vocab_size).to(device)
 """ example of running model once
 logits, loss = m(xb, yb)
 print(logits.shape)
@@ -119,6 +123,7 @@ for steps in range(max_iters):
     optimizer.step()
 
 # print(loss.item())
-ctx = torch.zeros((1, 1), dtype=torch.long)
+ctx = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(m.generate(ctx, max_new_tokens=500)[0].tolist()))
 
+print(datetime.datetime.now()-start)
