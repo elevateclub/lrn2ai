@@ -9,6 +9,7 @@ class Value:
         self.data = data
         self._prev = set(_children)
         self._op = _op
+        self.label = label
     
     def __repr__(self):
         return f"Value(data={self.data})"
@@ -19,11 +20,13 @@ class Value:
     def __mul__(self, other):
         return Value(self.data * other.data, (self, other), '*')
 
-a = Value(2.0)
-b = Value(-3.0)
-c = Value(10.0)
-
-d = a*b+c
+a = Value(2.0, label='a')
+b = Value(-3.0, label='b')
+c = Value(10.0, label='c')
+e = a*b; e.label = 'e'
+d = e + c; d.label = 'd'
+f = Value(-2.0, label='f')
+L = d * f
 
 def trace(root):
     nodes, edges = set(), set()
@@ -42,7 +45,7 @@ def draw_dot(root):
     nodes, edges = trace(root)
     for n in nodes:
         uid = str(id(n))
-        dot.node(name=uid, label="{data %.4f}" % (n.data, ), shape='record')
+        dot.node(name=uid, label="{ %s | data %.4f }" % (n.label, n.data), shape='record')
         if n._op:
             dot.node(name=uid + n._op, label=n._op)
             dot.edge(uid+n._op, uid)
@@ -51,4 +54,4 @@ def draw_dot(root):
     
     return dot
 
-draw_dot(d)
+draw_dot(L)
