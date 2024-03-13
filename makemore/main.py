@@ -36,7 +36,7 @@ g = torch.Generator().manual_seed(2147483647)
 
 P = (N+1).float()
 P /= P.sum(1, keepdims=True)
-for i in range(20):
+for i in range(5):
     out = []
     ix = 0
     while True:
@@ -87,18 +87,37 @@ g = torch.Generator().manual_seed(2147483647)
 W = torch.rand((27, 27), generator=g, requires_grad=True)
 
 # gradient descent
-for k in range(10):
+for k in range(100):
     # forward pass
     xenc = F.one_hot(xs, num_classes=27).float() # input to the network: one-hot encoding
     logits = xenc @ W # predict log-counts
     counts = logits.exp() # counts, equivalent to N
     probs = counts / counts.sum(1, keepdims=True) # probabilities for next char
     loss = -probs[torch.arange(num), ys].log().mean()
-    print(loss.item())
+    if k % 10 == 0:
+        print(loss.item())
 
     # backward pass
     W.grad = None
     loss.backward()
 
     # update
-    W.data += -0.1 * W.grad
+    W.data += -50 * W.grad
+
+# sample
+g = torch.Generator().manual_seed(2147483647)
+
+for i in range(5):
+    out = []
+    ix = 0
+    while True:
+        p = xenc = F.one_hot(torch.tensor([ix]), num_classes=27).float()
+        logits = xenc @ W
+        counts = logits.exp()
+        p = counts / counts.sum(1, keepdims=True)
+
+        ix = torch.multinomial(p, num_samples=1, replacement=True, generator=g).item()
+        out.append(itos[ix])
+        if ix == 0:
+            break
+    print(''.join(out))
