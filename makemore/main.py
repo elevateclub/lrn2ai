@@ -80,8 +80,23 @@ for w in words[:1]:
 xs = torch.tensor(xs)
 ys = torch.tensor(ys)
 
-xenc = F.one_hot(xs, num_classes=27).float()
-W = torch.rand((27, 27))
-logits = xenc @ W
-counts = logits.exp()
-probs = counts / counts.sum(1, keepdims=True)
+# randomly initialize 27 neurons' weights
+g = torch.Generator().manual_seed(2147483647)
+W = torch.rand((27, 27), generator=g, requires_grad=True)
+
+# forward pass
+xenc = F.one_hot(xs, num_classes=27).float() # input to the network: one-hot encoding
+logits = xenc @ W # predict log-counts
+counts = logits.exp() # counts, equivalent to N
+probs = counts / counts.sum(1, keepdims=True) # probabilities for next char
+loss = -probs[torch.arange(5), ys].log().mean()
+
+print(loss.item())
+
+# backward pass
+W.grad = None
+loss.backward()
+
+# update
+W.data += -0.1 * W.grad
+print(loss.item())
