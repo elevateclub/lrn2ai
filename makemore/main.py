@@ -69,7 +69,7 @@ print(f'{nll/n}')
 # create the training set of bigrams (x,y)
 xs, ys = [], []
 
-for w in words[:1]:
+for w in words:
     chs = ['.'] + list(w) + ['.']
     for ch1, ch2 in zip(chs, chs[1:]):
         ix1 = stoi[ch1]
@@ -79,24 +79,26 @@ for w in words[:1]:
 
 xs = torch.tensor(xs)
 ys = torch.tensor(ys)
+num = xs.nelement()
+print('number of examples: ', num)
 
 # randomly initialize 27 neurons' weights
 g = torch.Generator().manual_seed(2147483647)
 W = torch.rand((27, 27), generator=g, requires_grad=True)
 
-# forward pass
-xenc = F.one_hot(xs, num_classes=27).float() # input to the network: one-hot encoding
-logits = xenc @ W # predict log-counts
-counts = logits.exp() # counts, equivalent to N
-probs = counts / counts.sum(1, keepdims=True) # probabilities for next char
-loss = -probs[torch.arange(5), ys].log().mean()
+# gradient descent
+for k in range(10):
+    # forward pass
+    xenc = F.one_hot(xs, num_classes=27).float() # input to the network: one-hot encoding
+    logits = xenc @ W # predict log-counts
+    counts = logits.exp() # counts, equivalent to N
+    probs = counts / counts.sum(1, keepdims=True) # probabilities for next char
+    loss = -probs[torch.arange(num), ys].log().mean()
+    print(loss.item())
 
-print(loss.item())
+    # backward pass
+    W.grad = None
+    loss.backward()
 
-# backward pass
-W.grad = None
-loss.backward()
-
-# update
-W.data += -0.1 * W.grad
-print(loss.item())
+    # update
+    W.data += -0.1 * W.grad
