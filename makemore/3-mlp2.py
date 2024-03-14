@@ -48,7 +48,6 @@ n_hidden = 200 # number of neurons in the hidden layer of MLP
 g = torch.Generator().manual_seed(2147483647)
 C = torch.randn((vocab_size, n_embd),             generator=g)
 W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/(n_embd*block_size)**0.5 # kaiming norm
-b1 = torch.randn(n_hidden,                        generator=g) * 0.01
 W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.01
 b2 = torch.randn(vocab_size,                      generator=g) * 0
 
@@ -57,7 +56,7 @@ bnbias = torch.zeros((1, n_hidden))
 bnmean_running = torch.zeros((1, n_hidden))
 bnstd_running = torch.ones((1, n_hidden))
 
-parameters = [C, W1, b1, W2, b2]
+parameters = [C, W1, W2, b2]
 print(sum(p.nelement() for p in parameters))
 for p in parameters:
     p.requires_grad = True
@@ -75,7 +74,11 @@ for i in range(max_steps):
     # forward pass
     emb = C[Xb] # embed the characters into vectors
     embcat = emb.view(emb.shape[0], -1) # concatenate into vectors
-    hpreact = embcat @ W1 + b1 # hidden layer pre-activation
+
+    # linear layer
+    hpreact = embcat @ W1 # hidden layer pre-activation
+
+    # batch norm
     bnmeani = hpreact.mean(0, keepdim=True)
     bnstdi = hpreact.std(0, keepdim=True) 
     hpreact = bngain * (hpreact - bnmeani) / bnstdi + bnbias # batch norm
@@ -84,6 +87,7 @@ for i in range(max_steps):
         bnmean_running = 0.999 * bnmean_running + 0.001 * bnmeani
         bnstd_running = 0.999 * bnstd_running + 0.001 * bnstdi
 
+    # nonlinearity
     h = torch.tanh(hpreact) # hidden layer
     logits = h @ W2 + b2 # output layer
     loss = F.cross_entropy(logits, Yb) # loss function
@@ -108,7 +112,7 @@ with torch.no_grad():
     # pass the training set through
     emb = C[Xtr]
     embcat = emb.view(emb.shape[0], -1)
-    hpreact = embcat @ W1 + b1
+    hpreact = embcat @ W1
     # measure the mean/std over the entire training set
     bnmean = hpreact.mean(0, keepdim=True)
     bnstd = hpreact.std(0, keepdim=True)
@@ -123,7 +127,7 @@ def split_loss(split):
     }[split]
     emb = C[x] # (N, block_size, n_embd)
     embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)
-    hpreact = embcat @ W1 + b1 # (N, n_hidden)
+    hpreact = embcat @ W1 # (N, n_hidden)
     hpreact = bngain * (hpreact - bnmean_running) / bnstd_running + bnbias # fixed batch norm
     h = torch.tanh(hpreact)
     logits = h @ W2 + b2 # (N, vocab_size)
@@ -142,7 +146,7 @@ for _ in range(20):
     while True:
         # forward pass the neural net
         emb = C[torch.tensor([context])] # (1,block_size,n_embd)
-        h = torch.tanh(emb.view(1, -1) @ W1 + b1)
+        h = torch.tanh(emb.view(1, -1) @ W1)
         logits = h @ W2 + b2
         probs = F.softmax(logits, dim=1)
         # sample from the distribution
