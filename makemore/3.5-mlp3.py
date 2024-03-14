@@ -165,7 +165,7 @@ split_loss('train')
 split_loss('val')
 
 # sample from the model
-g = torch.Generator().manual_seed(2147483647 + 10)
+g = torch.Generator(device=dev).manual_seed(2147483647 + 10).to
 
 for _ in range(20):
     out = []
