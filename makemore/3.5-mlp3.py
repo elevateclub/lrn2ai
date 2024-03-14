@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import nn
 import matplotlib.pyplot as plt
 
 # read words
@@ -47,22 +48,30 @@ n_hidden = 200 # number of neurons in the hidden layer of MLP
 
 g = torch.Generator().manual_seed(2147483647)
 C = torch.randn((vocab_size, n_embd),             generator=g)
-W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (5/3)/(n_embd*block_size)**0.5 # kaiming norm
-W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.01
-b2 = torch.randn(vocab_size,                      generator=g) * 0
+layers = [
+    nn.Linear(n_embd * block_size, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
+    nn.Linear(          n_hidden, vocab_size), nn.BatchNorm1d(vocab_size)
+]
 
-bngain = torch.ones((1, n_hidden))
-bnbias = torch.zeros((1, n_hidden))
-bnmean_running = torch.zeros((1, n_hidden))
-bnstd_running = torch.ones((1, n_hidden))
+with torch.no_grad():
+    # last layer: make less confident
+    layers[-1].gamma *= 0.1
+    # all other layers: apply gain
+    for layer in layers[:-1]:
+        if isinstance(layer, nn.Linear):
+            layer.weight *= 5/3
 
-parameters = [C, W1, W2, b2]
-print(sum(p.nelement() for p in parameters))
+parameters = [C] + [p for layer in layers for p in layer.parameters()]
+print(sum(p.nelement() for p in parameters)) # num parameters
 for p in parameters:
     p.requires_grad = True
 
 # Optimization
-max_steps = 200000
+max_steps = 1000
 batch_size = 32
 lossi = []
 
@@ -73,24 +82,10 @@ for i in range(max_steps):
 
     # forward pass
     emb = C[Xb] # embed the characters into vectors
-    embcat = emb.view(emb.shape[0], -1) # concatenate into vectors
-
-    # linear layer
-    hpreact = embcat @ W1 # hidden layer pre-activation
-
-    # batch norm
-    bnmeani = hpreact.mean(0, keepdim=True)
-    bnstdi = hpreact.std(0, keepdim=True) 
-    hpreact = bngain * (hpreact - bnmeani) / bnstdi + bnbias # batch norm
-
-    with torch.no_grad():
-        bnmean_running = 0.999 * bnmean_running + 0.001 * bnmeani
-        bnstd_running = 0.999 * bnstd_running + 0.001 * bnstdi
-
-    # nonlinearity
-    h = torch.tanh(hpreact) # hidden layer
-    logits = h @ W2 + b2 # output layer
-    loss = F.cross_entropy(logits, Yb) # loss function
+    x = emb.view(emb.shape[0], -1) 
+    for layer in layers:
+        x = layer(x)
+    loss = F.cross_entropy(x, Yb) # loss
 
     # backward pass
     for p in parameters:
@@ -103,37 +98,67 @@ for i in range(max_steps):
         p.data += -lr * p.grad
 
     # track stats
-    if i % 10000 == 0: # print every once in a while
+    if i % 100 == 0: # print every once in a while
         print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')
     lossi.append(loss.log10().item())    
 
-# calibrate the batch norm at the end of training
-with torch.no_grad():
-    # pass the training set through
-    emb = C[Xtr]
-    embcat = emb.view(emb.shape[0], -1)
-    hpreact = embcat @ W1
-    # measure the mean/std over the entire training set
-    bnmean = hpreact.mean(0, keepdim=True)
-    bnstd = hpreact.std(0, keepdim=True)
+"""
+# visualize histograms
+plt.figure(figsize=(20,4))
+legends = []
+for i, layer in enumerate(layers[:-1]):
+    if isinstance(layer, nn.Tanh):
+        t = layer.out
+        print('layer %d (%10s): mean %+.2f, std %.2f satuated: %.2f%%' % (i, layer.__class__.__name__, t.mean(), t.std(), 0))
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'layer {i} ({layer.__class__.__name__})')
+plt.legend(legends)
+plt.title('activation distribution')
+
+plt.figure(figsize=(20,4))
+legends = []
+for i, layer in enumerate(layers[:-1]):
+    if isinstance(layer, nn.Tanh):
+        t = layer.out.grad
+        print('layer %d (%10s): mean %+f, std %e' % (i, layer.__class__.__name__, t.mean(), t.std()))
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'layer {i} ({layer.__class__.__name__}')
+plt.legend(legends);
+plt.title('gradient distribution')
+
+plt.figure(figsize=(20, 4))
+legends = []
+for i, p in enumerate(parameters):
+    t = p.grad
+    if p.ndim == 2:
+        print('weight %10s | mean %+f | std %e | grad:data ratio %e' % (tuple(p.shape), t.mean(), t.std(), t.std() / p.std()))
+        hy, hx = torch.histogram(t, density=True)
+        plt.plot(hx[:-1].detach(), hy.detach())
+        legends.append(f'{i} {tuple(p.shape)}')
+plt.legend(legends)
+plt.title('weights gradient distribution')
+"""
 
 # calculate loss
 @torch.no_grad()
 def split_loss(split):
-    x,y = {
+    xd,y = {
         'train': (Xtr, Ytr),
         'val': (Xdev, Ydev),
         'test': (Xte, Yte),
     }[split]
-    emb = C[x] # (N, block_size, n_embd)
-    embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)
-    hpreact = embcat @ W1 # (N, n_hidden)
-    hpreact = bngain * (hpreact - bnmean_running) / bnstd_running + bnbias # fixed batch norm
-    h = torch.tanh(hpreact)
-    logits = h @ W2 + b2 # (N, vocab_size)
-    loss = F.cross_entropy(logits, y)
+    emb = C[xd] # (N, block_size, n_embd)
+    x = emb.view(emb.shape[0], -1) 
+    for layer in layers:
+        x = layer(x)
+    loss = F.cross_entropy(x, y) # loss
     print(split, loss.item())
 
+# put layers into eval mode
+for layer in layers:
+    layer.training = False
 split_loss('train')
 split_loss('val')
 
@@ -146,8 +171,10 @@ for _ in range(20):
     while True:
         # forward pass the neural net
         emb = C[torch.tensor([context])] # (1,block_size,n_embd)
-        h = torch.tanh(emb.view(1, -1) @ W1)
-        logits = h @ W2 + b2
+        x = emb.view(emb.shape[0], -1) 
+        for layer in layers:
+            x = layer(x)
+        logits = x
         probs = F.softmax(logits, dim=1)
         # sample from the distribution
         ix = torch.multinomial(probs, num_samples=1, generator=g).item()
