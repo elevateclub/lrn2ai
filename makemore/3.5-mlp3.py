@@ -49,14 +49,14 @@ n_embd = 10 # dimensionality of the character embedding vectors
 n_hidden = 200 # number of neurons in the hidden layer of MLP
 
 g = torch.Generator().manual_seed(2147483647)
-C = torch.randn((vocab_size, n_embd),             generator=g)
+C = torch.randn((vocab_size, n_embd),             generator=g).to(dev)
 layers = [
-    nn.Linear(n_embd * block_size, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
-    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
-    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
-    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
-    nn.Linear(          n_hidden, n_hidden), nn.BatchNorm1d(n_hidden), nn.Tanh(),
-    nn.Linear(          n_hidden, vocab_size), nn.BatchNorm1d(vocab_size)
+    nn.Linear(n_embd * block_size, n_hidden, device=dev), nn.BatchNorm1d(n_hidden, device=dev), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden, device=dev), nn.BatchNorm1d(n_hidden, device=dev), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden, device=dev), nn.BatchNorm1d(n_hidden, device=dev), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden, device=dev), nn.BatchNorm1d(n_hidden, device=dev), nn.Tanh(),
+    nn.Linear(          n_hidden, n_hidden, device=dev), nn.BatchNorm1d(n_hidden, device=dev), nn.Tanh(),
+    nn.Linear(          n_hidden, vocab_size, device=dev), nn.BatchNorm1d(vocab_size, device=dev)
 ]
 
 with torch.no_grad():
@@ -73,7 +73,7 @@ for p in parameters:
     p.requires_grad = True
 
 # Optimization
-max_steps = 1000
+max_steps = 10000
 batch_size = 32
 lossi = []
 

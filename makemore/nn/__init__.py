@@ -2,10 +2,8 @@ import torch
 
 class Linear:
     def __init__(self, fan_in, fan_out, bias=True, g=torch.Generator(), device=torch.device('cpu')):
-        self.weight = torch.randn((fan_in, fan_out), generator=g) / fan_in**0.5
-        self.weight.to(device)
-        self.bias = torch.zeros(fan_out) if bias else None
-        self.bias.to(device)
+        self.weight = (torch.randn((fan_in, fan_out), generator=g) / fan_in**0.5).to(device)
+        self.bias = torch.zeros(fan_out).to(device) if bias else None
     
     def __call__(self, x):
         self.out = x @ self.weight
