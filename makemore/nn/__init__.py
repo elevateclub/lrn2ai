@@ -1,9 +1,11 @@
 import torch
 
 class Linear:
-    def __init__(self, fan_in, fan_out, bias=True, g=torch.Generator()):
+    def __init__(self, fan_in, fan_out, bias=True, g=torch.Generator(), device=torch.device('cpu')):
         self.weight = torch.randn((fan_in, fan_out), generator=g) / fan_in**0.5
+        self.weight.to(device)
         self.bias = torch.zeros(fan_out) if bias else None
+        self.bias.to(device)
     
     def __call__(self, x):
         self.out = x @ self.weight
@@ -15,16 +17,16 @@ class Linear:
         return [self.weight] + ([] if self.bias is None else [self.bias])
     
 class BatchNorm1d:
-    def __init__(self, dim, eps=1e-5, momentum=0.1):
+    def __init__(self, dim, eps=1e-5, momentum=0.1, device=torch.device('cpu')):
         self.eps = eps
         self.momentum = momentum
         self.training = True
         # parameters (trained with backprop)
-        self.gamma = torch.ones(dim)
-        self.beta = torch.zeros(dim)
+        self.gamma = torch.ones(dim).to(device)
+        self.beta = torch.zeros(dim).to(device)
         # buffers (trained with a running 'momentum update')
-        self.running_mean = torch.zeros(dim)
-        self.running_var = torch.ones(dim)
+        self.running_mean = torch.zeros(dim).to(device)
+        self.running_var = torch.ones(dim).to(device)
 
     def __call__(self, x):
         # calculate the forward pass

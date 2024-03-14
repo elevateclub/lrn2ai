@@ -3,6 +3,8 @@ import torch.nn.functional as F
 import nn
 import matplotlib.pyplot as plt
 
+dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 # read words
 words = open('names.txt', 'r').read().splitlines()
 len(words)
@@ -28,8 +30,8 @@ def build_dataset(words):
             Y.append(ix)
             context = context[1:] + [ix] # crop and append
         
-    X = torch.tensor(X)
-    Y = torch.tensor(Y)
+    X = torch.tensor(X).to(dev)
+    Y = torch.tensor(Y).to(dev)
     return X, Y
 
 import random
