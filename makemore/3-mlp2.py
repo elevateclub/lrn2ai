@@ -52,6 +52,9 @@ b1 = torch.randn(n_hidden,                        generator=g) * 0.01
 W2 = torch.randn((n_hidden, vocab_size),          generator=g) * 0.01
 b2 = torch.randn(vocab_size,                      generator=g) * 0
 
+bngain = torch.ones((1, n_hidden))
+bnbias = torch.zeros((1, n_hidden))
+
 parameters = [C, W1, b1, W2, b2]
 print(sum(p.nelement() for p in parameters))
 for p in parameters:
@@ -71,6 +74,7 @@ for i in range(max_steps):
     emb = C[Xb] # embed the characters into vectors
     embcat = emb.view(emb.shape[0], -1) # concatenate into vectors
     hpreact = embcat @ W1 + b1 # hidden layer pre-activation
+    hpreact = bngain * (hpreact - hpreact.mean(0, keepdim=True)) / hpreact.std(0, keepdim=True)  + bnbias # batch norm
     h = torch.tanh(hpreact) # hidden layer
     logits = h @ W2 + b2 # output layer
     loss = F.cross_entropy(logits, Yb) # loss function
@@ -99,7 +103,9 @@ def split_loss(split):
     }[split]
     emb = C[x] # (N, block_size, n_embd)
     embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)
-    h = torch.tanh(embcat @ W1 + b1) # (N, n_hidden)
+    hpreact = embcat @ W1 + b1 # (N, n_hidden)
+    hpreact = bngain * (hpreact - hpreact.mean(0, keepdim=True)) / hpreact.std(0, keepdim=True)  + bnbias # batch norm
+    h = torch.tanh(hpreact)
     logits = h @ W2 + b2 # (N, vocab_size)
     loss = F.cross_entropy(logits, y)
     print(split, loss.item())
