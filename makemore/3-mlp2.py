@@ -94,6 +94,16 @@ for i in range(max_steps):
         print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')
     lossi.append(loss.log10().item())    
 
+# calibrate the batch norm at the end of training
+with torch.no_grad():
+    # pass the training set through
+    emb = C[Xtr]
+    embcat = emb.view(emb.shape[0], -1)
+    hpreact = embcat @ W1 + b1
+    # measure the mean/std over the entire training set
+    bnmean = hpreact.mean(0, keepdim=True)
+    bnstd = hpreact.std(0, keepdim=True)
+
 # calculate loss
 def split_loss(split):
     x,y = {
@@ -104,7 +114,7 @@ def split_loss(split):
     emb = C[x] # (N, block_size, n_embd)
     embcat = emb.view(emb.shape[0], -1) # concat into (N, block_size * n_embd)
     hpreact = embcat @ W1 + b1 # (N, n_hidden)
-    hpreact = bngain * (hpreact - hpreact.mean(0, keepdim=True)) / hpreact.std(0, keepdim=True)  + bnbias # batch norm
+    hpreact = bngain * (hpreact - bnmean) / bnstd + bnbias # fixed batch norm
     h = torch.tanh(hpreact)
     logits = h @ W2 + b2 # (N, vocab_size)
     loss = F.cross_entropy(logits, y)
