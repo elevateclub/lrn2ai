@@ -1,8 +1,11 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
 from collections import defaultdict
 
-class TranslationDataset(Dataset):
+import torch
+from torch.utils.data import Dataset, DataLoader
+
+from minbpe import BasicTokenizer
+
+class BPEDataset(Dataset):
     def __init__(self, file_path, src_vocab, tgt_vocab, src_max_len, tgt_max_len):
         self.data = []
         self.src_vocab = src_vocab
@@ -15,45 +18,24 @@ class TranslationDataset(Dataset):
             for line in f:
                 id1x, str1_lang1, id1y, str1_lang2 = line.strip().split('\t')
                 self.data.append((str1_lang1, str1_lang2))
-                
+
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, idx):
         src_text, tgt_text = self.data[idx]
-        src_encoded = self.encode_text(src_text, self.src_vocab, self.src_max_len)
-        tgt_encoded = self.encode_text(tgt_text, self.tgt_vocab, self.tgt_max_len)
+        src_encoded = self.src_vocab.encode(src_text)
+        tgt_encoded = self.tgt_vocab.encode(tgt_text)
         
         return {
             "source": torch.tensor(src_encoded, dtype=torch.long),
             "target": torch.tensor(tgt_encoded, dtype=torch.long)
         }
     
-    def encode_text(self, text, vocab, max_len):
-        encoded = [vocab['<sos>']]  # Start-of-sequence token
-        encoded += [vocab.get(word, vocab['<unk>']) for word in text.split()]  # Unknown word token
-        encoded += [vocab['<eos>']]  # End-of-sequence token
-        
-        # Truncate or pad the sequence
-        if len(encoded) > max_len:
-            return encoded[:max_len]
-        else:
-            return encoded + [vocab['<pad>']] * (max_len - len(encoded))  # Padding token
-
-class BPEDataset(Dataset):
-    def __init__(self, sentences, vocab, max_length):
-        self.sentences = sentences
-        self.vocab = vocab
-        self.max_length = max_length
-        
-    def __len__(self):
-        return len(self.sentences)
-    
-    def __getitem__(self, idx):
-        sentence = self.sentences[idx]
-        encoded_sentence = tokenize_sentences([sentence], self.vocab, self.max_length)[0]
-        return torch.tensor(encoded_sentence, dtype=torch.long)
-
+def load_tokenizer(f):
+    t = BasicTokenizer()
+    t.load(f)
+    return t
 
 def process_tsv(input_file, src_output_file, tgt_output_file):
     """

@@ -2,17 +2,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
-from models import Transformer  # Adjust this import
-from prepare import BPEDataset, load_vocab  # Adjust these imports
+from models import Transformer  
+from prepare import BPEDataset, load_tokenizer
 
-src_vocab_file = 'dat/vocab-env'
-tgt_vocab_file = 'dat/vocab-kor'
+src_vocab_file = 'dat/vocab-eng/basic.model'
+tgt_vocab_file = 'dat/vocab-kor/basic.model'
 
-src_vocab = load_vocab(src_vocab_file)
-tgt_vocab = load_vocab(tgt_vocab_file)
+src_vocab = load_tokenizer(src_vocab_file)
+tgt_vocab = load_tokenizer(tgt_vocab_file)
 
 data_file = 'dat/raw.txt'
-dataset = BPEDataset(data_file, src_vocab, tgt_vocab, src_max_len=50, tgt_max_len=50)
+dataset = BPEDataset(data_file, src_vocab, tgt_vocab, src_max_len=128, tgt_max_len=128)
 
 # Split dataset into training and validation sets
 train_size = int(0.8 * len(dataset))
@@ -38,11 +38,13 @@ model = Transformer(
 ).to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=0.0005)
-loss_fn = nn.CrossEntropyLoss(ignore_index=vocab['<pad>'])
+loss_fn = nn.CrossEntropyLoss()
 
 num_iterations = 10000
 print_every = 100
 validate_every = 1000
+
+best_val_loss = float('inf')
 
 for iteration in range(num_iterations):
     model.train()
@@ -53,7 +55,6 @@ for iteration in range(num_iterations):
         src = batch['source'].to(device)
         tgt = batch['target'].to(device)
         
-        # Shift the decoder input and target
         tgt_input = tgt[:, :-1]
         targets = tgt[:, 1:].contiguous().view(-1)
         
@@ -67,7 +68,7 @@ for iteration in range(num_iterations):
         total_loss += loss.item()
         
         if (batch_idx + 1) % print_every == 0:
-            print(f'Iteration {iteration}, Loss: {total_loss / print_every:.4f}')
+            print(f'Iteration {iteration}, Batch {batch_idx + 1}, Loss: {total_loss / print_every:.4f}')
             total_loss = 0
     
     if (iteration + 1) % validate_every == 0:
@@ -89,3 +90,15 @@ for iteration in range(num_iterations):
         
         avg_val_loss = total_val_loss / len(val_loader)
         print(f'Validation Loss after {iteration + 1} iterations: {avg_val_loss:.4f}')
+
+        # Save model checkpoint if it has the best validation loss so far
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            checkpoint_path = os.path.join(output_dir, f'model_checkpoint_{iteration + 1}.pt')
+            torch.save({
+                'iteration': iteration + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': avg_val_loss,
+            }, checkpoint_path)
+            print(f'Model checkpoint saved to {checkpoint_path}')
