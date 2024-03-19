@@ -54,13 +54,13 @@ class MultiHeadAttention(nn.Module):
         key = self.split_heads(self.wk(key), batch_size)
         value = self.split_heads(self.wv(value), batch_size)
 
-        attention, _ = scaled_dot_product_attention(query, key, value, mask)
+        attention, attention_weights = scaled_dot_product_attention(query, key, value, mask)
 
         attention = attention.permute(0, 2, 1, 3).contiguous()
         concat_attention = attention.view(batch_size, -1, self.d_model)
         output = self.dense(concat_attention)
 
-        return output
+        return output, attention_weights
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, dff, dropout_rate=0.1):
@@ -79,7 +79,7 @@ class EncoderLayer(nn.Module):
         self.dropout2 = nn.Dropout(dropout_rate)
 
     def forward(self, x, mask):
-        attn_output = self.mha(x, x, x, mask)  # Self attention
+        attn_output, _ = self.mha(x, x, x, mask)  # Self attention
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)  # Add & Norm
 
