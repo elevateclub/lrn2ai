@@ -15,6 +15,7 @@ class PositionalEncoding(nn.Module):
         self.encoding = self.encoding.unsqueeze(0)
 
     def forward(self, x):
+        self.encoding = self.encoding.to(x.device)
         return x + self.encoding[:, :x.size(1)]
 
 def scaled_dot_product_attention(query, key, value, mask=None):
@@ -158,3 +159,11 @@ class Transformer(nn.Module):
         final_output = self.final_layer(dec_output)
 
         return final_output
+
+def create_padding_mask(seq, pad_token_idx=0):
+    return (seq == pad_token_idx).unsqueeze(1).unsqueeze(2)
+
+def create_look_ahead_mask(size):
+    mask = torch.triu(torch.ones((size, size)), diagonal=1)
+    return mask.masked_fill(mask==1, float('-inf'))
+

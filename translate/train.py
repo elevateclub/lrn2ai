@@ -2,17 +2,18 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
-from models import Transformer  
-from prepare import BPEDataset, load_tokenizer
+
+import models
+import prepare
 
 src_vocab_file = 'dat/vocab-eng/basic.model'
 tgt_vocab_file = 'dat/vocab-kor/basic.model'
 
-src_vocab = load_tokenizer(src_vocab_file)
-tgt_vocab = load_tokenizer(tgt_vocab_file)
+src_vocab = prepare.load_tokenizer(src_vocab_file)
+tgt_vocab = prepare.load_tokenizer(tgt_vocab_file)
 
 data_file = 'dat/raw.txt'
-dataset = BPEDataset(data_file, src_vocab, tgt_vocab, src_max_len=128, tgt_max_len=128)
+dataset = prepare.BPEDataset(data_file, src_vocab, tgt_vocab, src_max_len=128, tgt_max_len=128)
 
 # Split dataset into training and validation sets
 train_size = int(0.8 * len(dataset))
@@ -24,7 +25,7 @@ val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = Transformer(
+model = models.Transformer(
     num_encoder_layers=3, 
     num_decoder_layers=3,
     d_model=512, 
@@ -55,10 +56,15 @@ for iteration in range(num_iterations):
         src = batch['source'].to(device)
         tgt = batch['target'].to(device)
         
-        tgt_input = tgt[:, :-1]
-        targets = tgt[:, 1:].contiguous().view(-1)
+        tgt_input = tgt[:, :-1].to(device)
+        targets = tgt[:, 1:].contiguous().view(-1).to(device)
         
-        output = model(src, tgt_input)
+        # Create masks
+        enc_padding_mask = models.create_padding_mask(src, src_vocab.special_tokens['<pad>']).to(device)
+        look_ahead_mask = models.create_look_ahead_mask(tgt_input.size(1)).to(device)
+        dec_padding_mask = models.create_padding_mask(src, tgt_vocab.special_tokens['<pad>']).to(device)  # Often, dec_padding_mask is the same as enc_padding_mask
+        
+        output = model(src, tgt_input, enc_padding_mask, look_ahead_mask, dec_padding_mask)
         output = output.view(-1, output.size(-1))
         
         loss = loss_fn(output, targets)
