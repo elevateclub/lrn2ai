@@ -55,18 +55,18 @@ class MultiHeadAttention(nn.Module):
         key = self.split_heads(self.wk(key), batch_size)
         value = self.split_heads(self.wv(value), batch_size)
 
-        attention, attention_weights = scaled_dot_product_attention(query, key, value, mask)
+        attention = F.scaled_dot_product_attention(query, key, value, mask)
 
         attention = attention.permute(0, 2, 1, 3).contiguous()
         concat_attention = attention.view(batch_size, -1, self.d_model)
         output = self.dense(concat_attention)
 
-        return output, attention_weights
+        return output
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, dff, dropout_rate=0.1):
         super(EncoderLayer, self).__init__()
-        self.mha = MultiHeadAttention(d_model, num_heads)
+        self.mha = nn.MultiheadAttention(d_model, num_heads)
         self.ffn = nn.Sequential(
             nn.Linear(d_model, dff),
             nn.ReLU(),
@@ -80,7 +80,7 @@ class EncoderLayer(nn.Module):
         self.dropout2 = nn.Dropout(dropout_rate)
 
     def forward(self, x, mask):
-        attn_output, _ = self.mha(x, x, x, mask)  # Self attention
+        attn_output, _ = self.mha(x, x, x, key_padding_mask=mask, need_weights=False)  # Self attention
         attn_output = self.dropout1(attn_output)
         out1 = self.layernorm1(x + attn_output)  # Add & Norm
 
@@ -93,8 +93,8 @@ class EncoderLayer(nn.Module):
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, dff, dropout_rate=0.1):
         super(DecoderLayer, self).__init__()
-        self.mha1 = MultiHeadAttention(d_model, num_heads)
-        self.mha2 = MultiHeadAttention(d_model, num_heads)
+        self.mha1 = nn.MultiheadAttention(d_model, num_heads, batch_first=True)
+        self.mha2 = nn.MultiheadAttention(d_model, num_heads)
 
         self.ffn = nn.Sequential(
             nn.Linear(d_model, dff),
@@ -112,12 +112,12 @@ class DecoderLayer(nn.Module):
 
     def forward(self, x, enc_output, look_ahead_mask, padding_mask):
         # Self attention with look ahead mask
-        attn1, attn_weights_block1 = self.mha1(x, x, x, look_ahead_mask)
+        attn1, _= self.mha1(x, x, x, attn_mask=look_ahead_mask, need_weights=False)
         attn1 = self.dropout1(attn1)
         out1 = self.layernorm1(attn1 + x)
 
         # Encoder-decoder attention
-        attn2, attn_weights_block2 = self.mha2(out1, enc_output, enc_output, padding_mask)
+        attn2, _ = self.mha2(out1, enc_output, enc_output, key_padding_mask=padding_mask, need_weights=False)
         attn2 = self.dropout2(attn2)
         out2 = self.layernorm2(attn2 + out1)
 
@@ -126,7 +126,7 @@ class DecoderLayer(nn.Module):
         ffn_output = self.dropout3(ffn_output)
         out3 = self.layernorm3(ffn_output + out2)
 
-        return out3, attn_weights_block1, attn_weights_block2
+        return out3
 
 class Transformer(nn.Module):
     def __init__(self, num_encoder_layers, num_decoder_layers, d_model, num_heads, dff,
@@ -154,14 +154,14 @@ class Transformer(nn.Module):
 
         dec_output = dec_input
         for layer in self.decoder_layers:
-            dec_output, _, _ = layer(dec_output, enc_output, look_ahead_mask, dec_padding_mask)
+            dec_output = layer(dec_output, enc_output, look_ahead_mask, dec_padding_mask)
 
         final_output = self.final_layer(dec_output)
 
         return final_output
 
 def create_padding_mask(seq, pad_token_idx=0):
-    return (seq == pad_token_idx).unsqueeze(1).unsqueeze(2)
+    return (seq == pad_token_idx).transpose(0, 1)
 
 def create_look_ahead_mask(size):
     mask = torch.triu(torch.ones((size, size)), diagonal=1)
