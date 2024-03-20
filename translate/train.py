@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,23 +15,23 @@ src_vocab = prepare.load_tokenizer(src_vocab_file)
 tgt_vocab = prepare.load_tokenizer(tgt_vocab_file)
 
 data_file = 'dat/raw.txt'
-dataset = prepare.BPEDataset(data_file, src_vocab, tgt_vocab, src_max_len=128, tgt_max_len=128)
+dataset = prepare.BPEDataset(data_file, src_vocab, tgt_vocab, src_max_len=16, tgt_max_len=16)
 
 # Split dataset into training and validation sets
 train_size = int(0.8 * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = models.Transformer(
     num_encoder_layers=3, 
     num_decoder_layers=3,
-    d_model=512, 
-    num_heads=8, 
+    d_model=32, 
+    num_heads=16, 
     dff=2048,
     input_vocab_size=len(src_vocab),  # Use source vocab size
     target_vocab_size=len(tgt_vocab),  # Use target vocab size
@@ -41,12 +43,11 @@ model = models.Transformer(
 optimizer = optim.Adam(model.parameters(), lr=0.0005)
 loss_fn = nn.CrossEntropyLoss()
 
-num_iterations = 10000
+num_iterations = 1000
 print_every = 100
-validate_every = 1000
+validate_every = 10
 
 best_val_loss = float('inf')
-
 for iteration in range(num_iterations):
     model.train()
     total_loss = 0
@@ -56,14 +57,14 @@ for iteration in range(num_iterations):
         src = batch['source'].to(device)
         tgt = batch['target'].to(device)
         
-        tgt_input = tgt[:, :-1].to(device)
-        targets = tgt[:, 1:].contiguous().view(-1).to(device)
+        tgt_input = tgt[:, :].to(device)
+        targets = tgt[:, :].contiguous().view(-1).to(device)
         
         # Create masks
         enc_padding_mask = models.create_padding_mask(src, src_vocab.special_tokens['<pad>']).to(device)
         look_ahead_mask = models.create_look_ahead_mask(tgt_input.size(1)).to(device)
-        dec_padding_mask = models.create_padding_mask(src, tgt_vocab.special_tokens['<pad>']).to(device)  # Often, dec_padding_mask is the same as enc_padding_mask
-        
+        dec_padding_mask = models.create_padding_mask(tgt, tgt_vocab.special_tokens['<pad>']).to(device)  # Often, dec_padding_mask is the same as enc_padding_mask
+
         output = model(src, tgt_input, enc_padding_mask, look_ahead_mask, dec_padding_mask)
         output = output.view(-1, output.size(-1))
         
@@ -76,7 +77,7 @@ for iteration in range(num_iterations):
         if (batch_idx + 1) % print_every == 0:
             print(f'Iteration {iteration}, Batch {batch_idx + 1}, Loss: {total_loss / print_every:.4f}')
             total_loss = 0
-    
+
     if (iteration + 1) % validate_every == 0:
         model.eval()
         total_val_loss = 0
@@ -85,10 +86,10 @@ for iteration in range(num_iterations):
                 src = batch['source'].to(device)
                 tgt = batch['target'].to(device)
                 
-                tgt_input = tgt[:, :-1]
-                targets = tgt[:, 1:].contiguous().view(-1)
+                tgt_input = tgt[:, :]
+                targets = tgt[:, :].contiguous().view(-1)
                 
-                output = model(src, tgt_input)
+                output = model(src, tgt_input, None, look_ahead_mask, None)
                 output = output.view(-1, output.size(-1))
                 loss = loss_fn(output, targets)
                 
@@ -100,7 +101,7 @@ for iteration in range(num_iterations):
         # Save model checkpoint if it has the best validation loss so far
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            checkpoint_path = os.path.join(output_dir, f'model_checkpoint_{iteration + 1}.pt')
+            checkpoint_path = os.path.join('out', f'model_checkpoint_{iteration + 1}.pt')
             torch.save({
                 'iteration': iteration + 1,
                 'model_state_dict': model.state_dict(),
