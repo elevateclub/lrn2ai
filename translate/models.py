@@ -159,9 +159,40 @@ class Transformer(nn.Module):
         final_output = self.final_layer(dec_output)
 
         return final_output
+    
+    @torch.no_grad()
+    def generate(self, in_idx, out_idx, max_new_tokens, temperature=1.0, top_k=None):
+        block_size = 16 # TODO
+        device = next(self.parameters()).device
 
-def create_padding_mask(seq, pad_token_idx=0):
-    return (seq == pad_token_idx).transpose(0, 1)
+        enc_padding_mask = create_padding_mask(in_idx).to(device)
+
+        for i in range(max_new_tokens):
+            # idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size]
+            look_ahead_mask = create_look_ahead_mask(out_idx.size(1)).to(device)
+            logits = self(in_idx, out_idx, enc_padding_mask, look_ahead_mask)
+            logits = logits[:, -1, :]/temperature
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            out_idx = torch.cat((out_idx, idx_next), dim=1)
+
+            if idx_next == special_tokens['<eos>']:
+                break
+        return out_idx
+
+
+special_tokens = {
+    '<sos>': 0,
+    '<eos>': 1,
+    '<pad>': 2,
+    '<unk>': 3
+} 
+
+def create_padding_mask(seq):
+    return (seq == special_tokens['<pad>']).unsqueeze(1).unsqueeze(2)
 
 def create_look_ahead_mask(size):
     mask = torch.triu(torch.ones((size, size)), diagonal=1)

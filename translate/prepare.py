@@ -24,28 +24,28 @@ class BPEDataset(Dataset):
     
     def __getitem__(self, idx):
         src_text, tgt_text = self.data[idx]
-        src_encoded = self.tokenize_and_encode(src_text, self.src_vocab, self.src_max_len)
-        tgt_encoded = self.tokenize_and_encode(tgt_text, self.tgt_vocab, self.tgt_max_len)
+        src_encoded = tokenize_and_encode(src_text, self.src_vocab, self.src_max_len)
+        tgt_encoded = tokenize_and_encode(tgt_text, self.tgt_vocab, self.tgt_max_len)
         
         return {
             "source": torch.tensor(src_encoded, dtype=torch.long),
             "target": torch.tensor(tgt_encoded, dtype=torch.long)
         }
     
-    def tokenize_and_encode(self, text, vocab, max_len):
-        # Convert tokens to their corresponding indices in the vocabulary
-        token_ids = vocab.encode(text)
-        
-        # Add <sos> and <eos> tokens
-        token_ids = [vocab.special_tokens['<sos>']] + token_ids + [vocab.special_tokens['<eos>']]
-        
-        # Padding or truncation to max_len
-        if len(token_ids) < max_len:
-            token_ids += [vocab.special_tokens['<pad>']] * (max_len - len(token_ids))  # Padding
-        else:
-            token_ids = token_ids[:max_len-1] + [vocab.special_tokens['<eos>']]  # Ensure <eos> is at the end if truncating
-        
-        return token_ids
+def tokenize_and_encode(text, vocab, max_len):
+    # Convert tokens to their corresponding indices in the vocabulary
+    token_ids = vocab.encode(text)
+    
+    # Add <sos> and <eos> tokens
+    token_ids = [vocab.special_tokens['<sos>']] + token_ids + [vocab.special_tokens['<eos>']]
+    
+    # Padding or truncation to max_len
+    if len(token_ids) < max_len:
+        token_ids += [vocab.special_tokens['<pad>']] * (max_len - len(token_ids))  # Padding
+    else:
+        token_ids = token_ids[:max_len-1] + [vocab.special_tokens['<eos>']]  # Ensure <eos> is at the end if truncating
+    
+    return token_ids
 
 def load_tokenizer(f):
     t = BasicTokenizer()
